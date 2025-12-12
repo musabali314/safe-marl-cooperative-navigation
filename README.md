@@ -5,10 +5,18 @@
 
 <p align="center">
 
-<!--
-Stage 1:
-Stage 2:
-Stage 3:
+Stage 1: 
+
+https://github.com/user-attachments/assets/0f0d17f4-e8bd-4760-8f1e-0eae3a4420d5
+
+Stage 2: 
+
+https://github.com/user-attachments/assets/c12dc15e-f163-4d96-bc1d-74c813279bf4
+
+Stage 3: 
+
+https://github.com/user-attachments/assets/7efa9062-9660-4ddd-9822-1347de5f18e5
+
 -->
 
 ▶️ **Stage 1 — Goal Reaching**
