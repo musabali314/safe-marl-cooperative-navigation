@@ -6,13 +6,10 @@
 <p align="center">
 
 Stage 1:
-https://github.com/user-attachments/assets/0f0d17f4-e8bd-4760-8f1e-0eae3a4420d5
 
 Stage 2:
-https://github.com/user-attachments/assets/c12dc15e-f163-4d96-bc1d-74c813279bf4
 
 Stage 3:
-https://github.com/user-attachments/assets/7efa9062-9660-4ddd-9822-1347de5f18e5
 
 </p>
 
@@ -35,26 +32,26 @@ All simulation logic is implemented from scratch inside the `EnvCoop` class.
 ### 2.1 Workspace and Robot Model
 
 **Workspace**
-```
-Omega = [-3, 3] x [-3, 3] subset R^2
-```
+
+$$\Omega = [-3, 3] \times [-3, 3] \subset \mathbb{R}^2$$
 
 **Robot State (unicycle model)**
-```
-x_i = (x_i, y_i, theta_i)
-```
+
+$$\mathbf{x}_i = (x_i, y_i, \theta_i)$$
 
 **Control Input**
-```
-a_i = (v_i, omega_i)
-```
+
+$$\mathbf{a}_i = (v_i, \omega_i)$$
 
 **Discrete-Time Dynamics**
-```
-x_i(t+1) = x_i(t) + v_i(t) * cos(theta_i(t)) * Delta t
-y_i(t+1) = y_i(t) + v_i(t) * sin(theta_i(t)) * Delta t
-theta_i(t+1) = theta_i(t) + omega_i(t) * Delta t
-```
+
+$$
+\begin{align}
+x_i(t+1) &= x_i(t) + v_i(t) \cdot \cos(\theta_i(t)) \cdot \Delta t \\
+y_i(t+1) &= y_i(t) + v_i(t) \cdot \sin(\theta_i(t)) \cdot \Delta t \\
+\theta_i(t+1) &= \theta_i(t) + \omega_i(t) \cdot \Delta t
+\end{align}
+$$
 
 Actions are bounded and consistent with the actor network. Episodes terminate upon collision, prolonged stagnation, or reaching the step horizon.
 
@@ -72,11 +69,9 @@ Actions are bounded and consistent with the actor network. Episodes terminate up
 
 Each robot is equipped with a simulated planar LiDAR.
 
-```
-scan_i = [r_1, r_2, ..., r_K],   r_k in [0, r_max]
-```
+$$\text{scan}_i = [r_1, r_2, \ldots, r_K], \quad r_k \in [0, r_{\text{max}}]$$
 
-Rays are cast in the robot frame over [-pi, pi]. The minimum-distance ray and its bearing are explicitly encoded in the observation.
+Rays are cast in the robot frame over $[-\pi, \pi]$. The minimum-distance ray and its bearing are explicitly encoded in the observation.
 
 ---
 
@@ -84,18 +79,18 @@ Rays are cast in the robot frame over [-pi, pi]. The minimum-distance ray and it
 
 Each agent receives a **12-dimensional local observation**:
 
-```
-o_i = [
-  d_min,
-  alpha_obs,
-  d_i1, alpha_i1,
-  d_i2, alpha_i2,
-  d_i_goal, alpha_i_goal,
-  v_i(t-1), omega_i(t-1),
-  d_centroid_goal,
-  d_form_ref
-]
-```
+$$
+\mathbf{o}_i = \begin{bmatrix}
+d_{\text{min}} \\
+\alpha_{\text{obs}} \\
+d_{i1}, & \alpha_{i1} \\
+d_{i2}, & \alpha_{i2} \\
+d_{i,\text{goal}}, & \alpha_{i,\text{goal}} \\
+v_i(t-1), & \omega_i(t-1) \\
+d_{\text{centroid,goal}} \\
+d_{\text{form,ref}}
+\end{bmatrix}
+$$
 
 All quantities are normalized.
 
@@ -105,28 +100,24 @@ All quantities are normalized.
 
 The per-agent reward is composed as:
 
-```
-r_i =
-  r_alive +
-  r_prog +
-  r_goal +
-  r_form +
-  r_rr +
-  r_obs +
-  r_mpc
-```
+$$
+r_i = r_{\text{alive}} + r_{\text{prog}} + r_{\text{goal}} + r_{\text{form}} + r_{\text{rr}} + r_{\text{obs}} + r_{\text{mpc}}
+$$
 
 Key terms:
 
-```
-r_prog  ~  d_goal(t-1) - d_goal(t)
-r_form  ~ -|d_ij - d_form_ref|
-r_rr    < 0   if d_ij < d_safe
-r_obs   < 0   if min(scan_i) < d_safe_obs
-r_mpc   ~ -||a_RL - a_safe||
-```
+$$
+\begin{align}
+r_{\text{prog}} &\sim d_{\text{goal}}(t-1) - d_{\text{goal}}(t) \\
+r_{\text{form}} &\sim -|d_{ij} - d_{\text{form,ref}}| \\
+r_{\text{rr}} &< 0 \quad \text{if } d_{ij} < d_{\text{safe}} \\
+r_{\text{obs}} &< 0 \quad \text{if } \min(\text{scan}_i) < d_{\text{safe,obs}} \\
+r_{\text{mpc}} &\sim -\|\mathbf{a}_{\text{RL}} - \mathbf{a}_{\text{safe}}\|
+\end{align}
+$$
 
 Terminal rewards override shaping:
+
 - Goal reached → large positive reward
 - Collision or stagnation → large negative reward
 
@@ -136,16 +127,16 @@ Terminal rewards override shaping:
 
 A supervisory safety layer computes:
 
-```
-a_safe = pi_safe(a_RL, x)
-```
+$$\mathbf{a}_{\text{safe}} = \pi_{\text{safe}}(\mathbf{a}_{\text{RL}}, \mathbf{x})$$
 
 Subject to distance constraints:
 
-```
-d_obs(x) >= d_safe_obs
-d_nei(x) >= d_safe_nei
-```
+$$
+\begin{align}
+d_{\text{obs}}(\mathbf{x}) &\geq d_{\text{safe,obs}} \\
+d_{\text{nei}}(\mathbf{x}) &\geq d_{\text{safe,nei}}
+\end{align}
+$$
 
 Two backends are supported:
 
@@ -155,7 +146,7 @@ Solves a constrained nonlinear optimal control problem minimizing deviation from
 
 ### 3.2 Sampling-Based MPC (Fallback)
 
-- Samples candidate actions near `a_RL`
+- Samples candidate actions near $\mathbf{a}_{\text{RL}}$
 - Forward-simulates trajectories
 - Penalizes unsafe predictions
 - Selects the lowest-cost action
@@ -170,15 +161,11 @@ Used automatically if ACADOS is unavailable.
 
 Each agent follows a Gaussian policy:
 
-```
-pi_theta(a_i | o_i) = Normal(mu_theta(o_i), sigma_theta(o_i))
-```
+$$\pi_\theta(\mathbf{a}_i \mid \mathbf{o}_i) = \mathcal{N}(\mu_\theta(\mathbf{o}_i), \sigma_\theta(\mathbf{o}_i))$$
 
 Sampling uses reparameterization:
 
-```
-a = tanh(mu + sigma * epsilon)
-```
+$$\mathbf{a} = \tanh(\mu + \sigma \odot \epsilon)$$
 
 The same actor network is shared across agents.
 
@@ -188,45 +175,37 @@ The same actor network is shared across agents.
 
 Attention mechanism:
 
-```
-q_i = W_Q * h_i
-k_i = W_K * h_i
-v_i = W_V * h_i
-```
+$$
+\begin{align}
+\mathbf{q}_i &= W_Q \mathbf{h}_i \\
+\mathbf{k}_i &= W_K \mathbf{h}_i \\
+\mathbf{v}_i &= W_V \mathbf{h}_i
+\end{align}
+$$
 
-```
-alpha_ij = softmax( (q_i dot k_j) / sqrt(d) )
-```
+$$\alpha_{ij} = \text{softmax}\left(\frac{\mathbf{q}_i \cdot \mathbf{k}_j}{\sqrt{d}}\right)$$
 
-```
-c_i = sum_j alpha_ij * v_j
-```
+$$\mathbf{c}_i = \sum_j \alpha_{ij} \mathbf{v}_j$$
 
 Final critic embedding:
 
-```
-z_i = [h_i , c_i]
-```
+$$\mathbf{z}_i = [\mathbf{h}_i \,;\, \mathbf{c}_i]$$
 
 Twin Q-networks compute:
 
-```
-Q1(z), Q2(z)
-```
+$$Q_1(\mathbf{z}), \quad Q_2(\mathbf{z})$$
 
 ---
 
 ### 4.3 SAC Updates
 
 Actor objective:
-```
-J_pi = E[ alpha * log pi(a|o) - Q(o,a) ]
-```
+
+$$J_\pi = \mathbb{E}\left[\alpha \log \pi(\mathbf{a} \mid \mathbf{o}) - Q(\mathbf{o}, \mathbf{a})\right]$$
 
 Critic target:
-```
-y = r + gamma * (min(Q_target) - alpha * log pi)
-```
+
+$$y = r + \gamma \left(\min Q_{\text{target}} - \alpha \log \pi\right)$$
 
 Entropy temperature is learned automatically.
 
