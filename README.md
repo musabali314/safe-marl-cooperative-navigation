@@ -5,15 +5,15 @@
 
 <p align="center">
 
-Stage 1: 
+Stage 1:
 
 https://github.com/user-attachments/assets/0f0d17f4-e8bd-4760-8f1e-0eae3a4420d5
 
-Stage 2: 
+Stage 2:
 
 https://github.com/user-attachments/assets/c12dc15e-f163-4d96-bc1d-74c813279bf4
 
-Stage 3: 
+Stage 3:
 
 https://github.com/user-attachments/assets/7efa9062-9660-4ddd-9822-1347de5f18e5
 
@@ -27,219 +27,276 @@ https://github.com/user-attachments/assets/7efa9062-9660-4ddd-9822-1347de5f18e5
 
 ---
 
+
+---
+
 ## 1. Overview
 
-This repository implements a fully self-contained Python simulation and learning stack for **safe cooperative navigation** with three differential-drive robots in a continuous 2D workspace. The project closely follows the ideas in Dawood et al. (2025) while:
-
-- Replacing ROS/Gazebo with a **pure Python environment** (`env_coop.py`)
-- Using a **shared Gaussian actor** and a **centralized attention critic** (`SAC_ATT.py`, `ATT_modules.py`)
-- Integrating a **hybrid safety filter** (`mpc_filter.py`) that uses:
-  - ACADOS-based MPC when available
-  - A sampling-based approximate MPC fallback otherwise
-- Providing clear **reward decomposition**, **curriculum learning**, and **evaluation scripts**
-
-The resulting agents learn to reach a goal, maintain approximate formation, avoid collisions, and cooperate under a safety supervisor.
+This repository implements a fully self-contained Python simulation and learning stack for **safe cooperative navigation** with three differential-drive robots in a continuous 2D workspace. The implementation closely follows Dawood et al. (2025) while replacing ROS/Gazebo with a pure Python environment, integrating a centralized attention critic, and enforcing safety via an MPC-style action filter.
 
 ---
 
 ## 2. Environment and Dynamics (`env_coop.py`)
 
-The environment is implemented from scratch and everything is controlled directly through the `EnvCoop` class.
+All simulation logic is implemented from scratch inside the `EnvCoop` class.
 
-### 2.1 Workspace and Dynamics
+### 2.1 Workspace and Robot Model
 
-- **Workspace**: square domain Ω = [-3, 3] × [-3, 3] (6 × 6 meters)
-- **Robots**: up to 3 unicycle robots with state
+**Workspace**
 
-  x_i = (x_i, y_i, θ_i) ∈ R³
+```math
+Ω = [-3, 3] × [-3, 3] ⊂ ℝ²
+```
 
-  and continuous control
+**Robot State (unicycle model)**
 
-  a_i = (v_i, ω_i) ∈ R²
+```math
+x_i = (x_i, y_i, θ_i)
+```
 
-- **Discrete-time unicycle model** with step size `DT = 0.1`:
+**Control Input**
 
-  x_i(t+1) = x_i(t) + v_i(t) cos(θ_i(t)) Δt
-  y_i(t+1) = y_i(t) + v_i(t) sin(θ_i(t)) Δt
-  θ_i(t+1) = θ_i(t) + ω_i(t) Δt
+```math
+a_i = (v_i, ω_i)
+```
 
-- **Velocity limits** (shared with the actor):
-  - Linear: v_i ∈ [-0.5, 0.5]
-  - Angular: ω_i ∈ [-0.5, 0.5]
+**Discrete-Time Dynamics**
 
-Episodes terminate when:
-- Any robot collides with an obstacle or another robot
-- A robot is stuck too long (no significant motion)
-- Or the maximum step horizon `MAX_STEPS = 350` is reached
+```math
+x_i(t+1) = x_i(t) + v_i(t) cos(θ_i(t)) Δt
+y_i(t+1) = y_i(t) + v_i(t) sin(θ_i(t)) Δt
+θ_i(t+1) = θ_i(t) + ω_i(t) Δt
+```
 
-### 2.2 Geometry, Obstacles, and Goal
+Actions are bounded and consistent with the actor network.
 
-- **Robot radius**: `ROBOT_RADIUS = 0.15`
-- **Obstacle radius**: `OBSTACLE_RADIUS = 0.25`
-- **Number of obstacles**: `N_OBSTACLES = 3` (Stage 3 only)
-- Obstacles are sampled with a clearance from robot initial positions
-- The **goal** is a circular region managed by `RespawnGoal`, resampled after each success
+Episodes terminate upon collision, prolonged stagnation, or reaching the step horizon.
 
-### 2.3 LiDAR Model
+---
 
-Each robot carries a simulated 1D LiDAR:
+### 2.2 Geometry and Obstacles
 
-- **Number of rays**: `LIDAR_RAYS = 40`
-- **Range**: `LIDAR_RANGE = 2.5` meters
-- Rays are cast in the robot frame over [-π, π]
+- Robots and obstacles are modeled as circles.
+- Obstacles are enabled only in **Stage 3**.
+- The goal is a circular region sampled to avoid collisions.
 
-For each ray:
-- Intersection with walls is checked
-- Intersection with obstacles is checked
-- The minimum hit distance is returned; if nothing is hit, distance = `LIDAR_RANGE`
+---
 
-Additionally, for each robot the closest obstacle point in world coordinates is stored and passed to the safety filter.
+### 2.3 LiDAR Observation Model
 
-### 2.4 Observations
+Each robot is equipped with a simulated planar LiDAR.
+
+```math
+scan_i = [r_1, r_2, …, r_K],   r_k ∈ [0, r_max]
+```
+
+Rays are cast in the robot frame over `[-π, π]`. The minimum distance ray and its bearing are explicitly encoded in the observation.
+
+---
+
+### 2.4 Agent Observation Vector
 
 Each agent receives a **12-dimensional local observation**:
 
-o_i = [
-  min_scan,
-  angle_closest_obs,
-  d_i1, angle_i1,
-  d_i2, angle_i2,
-  d_i_goal, angle_i_goal,
-  v_i(t-1), ω_i(t-1),
-  d_centroid_goal, d_form_ref
+```math
+o_i =
+[
+d_min,
+α_obs,
+d_{i1}, α_{i1},
+d_{i2}, α_{i2},
+d_i^goal, α_i^goal,
+v_i(t-1), ω_i(t-1),
+d_centroid^goal,
+d_form
 ]
-
-This encodes:
-- Nearest obstacle distance and bearing
-- Distances and bearings to the two closest robots
-- Agent-to-goal distance and heading
-- Previous action (for smoothness)
-- Team centroid-to-goal distance
-- Desired formation spacing (sampled from {1.0, 1.25, 1.5})
-
-All quantities are normalized by workspace size or sensor limits.
-
-### 2.5 Reward Structure
-
-The per-agent reward is:
-
-r = r_alive + r_prog + r_goal + r_form + r_rr + r_obs + r_mpc
+```
 
 Where:
-- **Alive reward**: small positive constant
-- **Progress reward**: proportional to decrease in centroid-to-goal distance
-- **Goal shaping**: penalty proportional to remaining goal distance
-- **Formation penalty**: active in Stages 2–3, penalizes deviation from desired spacing
-- **Robot–robot penalty**: soft + hard penalties for close proximity
-- **Obstacle penalty**: active in Stage 3, penalizes small LiDAR distances
-- **MPC deviation penalty**: penalizes deviation between RL and safety-filtered actions
+- `d_min, α_obs` encode the closest LiDAR hit,
+- `(d_{i1}, α_{i1}), (d_{i2}, α_{i2})` are distances/bearings to neighbors,
+- `(d_i^goal, α_i^goal)` encode goal geometry,
+- `(v_i(t-1), ω_i(t-1))` are previous actions,
+- `d_centroid^goal` is team-level progress,
+- `d_form` is the desired formation spacing.
 
-Terminal overrides:
-- **Goal reached**: large positive reward, goal respawned
-- **Collision or stagnation**: large negative reward
+All quantities are normalized.
 
-A `reward_info` dictionary is returned for logging and debugging.
+---
+
+### 2.5 Reward Function
+
+The per-agent reward is composed as:
+
+```math
+r_i =
+r_alive +
+r_prog +
+r_goal +
+r_form +
+r_rr +
+r_obs +
+r_mpc
+```
+
+**Components**
+
+```math
+r_prog ∝ d_goal(t−1) − d_goal(t)
+```
+
+```math
+r_form ∝ −|d_ij − d_form|
+```
+
+```math
+r_rr < 0  if  d_ij < d_safe
+```
+
+```math
+r_obs < 0  if  min(scan_i) < d_safe_obs
+```
+
+```math
+r_mpc ∝ −||a_RL − a_safe||
+```
+
+Terminal rewards override shaping:
+- Success yields a large positive reward.
+- Collisions yield a large negative reward.
 
 ---
 
 ## 3. Safety Filtering (`mpc_filter.py`)
 
-A supervisory safety filter modifies the RL action u_RL into a safe action u_safe subject to:
+A supervisory safety layer computes:
 
-- Robot–obstacle distance ≥ d_safe_obs
-- Robot–robot distance ≥ d_safe_nei
-
-Two backends are implemented:
-
-1. **ACADOS-based MPC**
-   - Solves a short-horizon nonlinear OCP with unicycle dynamics
-   - Objective: minimize deviation from u_RL while enforcing safety constraints
-
-2. **Sampling-based MPC fallback**
-   - Used when ACADOS / CasADi are unavailable
-   - Evaluates a grid of candidate actions around u_RL
-   - Simulates short-horizon trajectories
-   - Penalizes predicted constraint violations
-
-Unified API:
-
-```python
-safe_action = filter_mpc().run_mpc(
-    u_RL, x0,
-    obs_x, obs_y,
-    n1_x, n1_y,
-    n2_x, n2_y,
-    agent_index
-)
+```math
+a_safe = π_safe(a_RL, x)
 ```
+
+Subject to:
+
+```math
+d_obs(x) ≥ d_safe_obs
+d_nei(x) ≥ d_safe_nei
+```
+
+Two backends are supported:
+
+### 3.1 ACADOS MPC (Exact)
+
+Solves a constrained nonlinear optimal control problem minimizing deviation from the RL action while enforcing safety constraints over a finite horizon.
+
+### 3.2 Sampling-Based MPC (Fallback)
+
+Approximates MPC by:
+- Sampling candidate actions near `a_RL`,
+- Forward simulating trajectories,
+- Penalizing unsafe predictions,
+- Selecting the lowest-cost action.
+
+This backend is used automatically if ACADOS is unavailable.
 
 ---
 
 ## 4. Multi-Agent SAC with Attention Critic
 
-### 4.1 Actor
+### 4.1 Actor (Shared Gaussian Policy)
 
-- Shared Gaussian policy π(a | o)
-- Conv1D + MLP LiDAR encoder
-- MLP observation encoder
-- Outputs mean μ and std σ
-- Actions sampled via reparameterization and squashed with `tanh`
+Each agent follows a Gaussian policy:
+
+```math
+π_θ(a_i | o_i) = 𝒩(μ_θ(o_i), σ_θ(o_i))
+```
+
+Sampling uses reparameterization:
+
+```math
+a = tanh(μ + σ ⊙ ε)
+```
+
+The same actor network is shared across agents.
+
+---
 
 ### 4.2 Centralized Attention Critic
 
-- Per-agent embeddings h_i
-- Multi-head self-attention over agents
-- Context vectors c_i capture inter-agent influence
-- Twin Q-networks reduce overestimation bias
+The critic encodes each agent into an embedding `h_i` and applies multi-head self-attention:
+
+```math
+q_i = W_Q h_i
+k_i = W_K h_i
+v_i = W_V h_i
+```
+
+```math
+α_ij = softmax( (q_i · k_j) / √d )
+```
+
+```math
+c_i = Σ_j α_ij v_j
+```
+
+Final critic input:
+
+```math
+z_i = [h_i , c_i]
+```
+
+Twin Q-networks compute:
+
+```math
+Q_1(z), Q_2(z)
+```
+
+---
 
 ### 4.3 SAC Updates
 
-- Actor loss: α log π(a|o) − Q(o,a)
-- Critic loss: MSE against soft Bellman target
-- Temperature α learned automatically toward target entropy
+Actor objective:
+
+```math
+J_π = E[ α log π(a|o) − Q(o,a) ]
+```
+
+Critic target:
+
+```math
+y = r + γ ( min(Q′) − α log π )
+```
+
+Temperature is learned automatically.
 
 ---
 
 ## 5. Curriculum Learning
 
-Stages are configured via `create_env_for_stage(stage)`:
+Training proceeds in three stages:
 
-1. **Stage 1 — Goal Reaching**
-   - No obstacles, no formation, no safety filter
+1. **Stage 1**: Goal reaching (no formation, no obstacles, no safety filter)
+2. **Stage 2**: Formation keeping (formation enabled, no obstacles)
+3. **Stage 3**: Obstacle-aware navigation with MPC safety filter
 
-2. **Stage 2 — Formation-Keeping**
-   - Formation enabled
-   - No obstacles, no safety filter
-
-3. **Stage 3 — MPC-Safe Navigation**
-   - Obstacles enabled
-   - Formation enabled
-   - MPC safety filter enabled
+Each stage builds on the previous one.
 
 ---
 
 ## 6. Training and Evaluation
 
-### Training
-```bash
-python main.py
-```
+- Training: `python main.py`
+- Quantitative evaluation: `python Evaluation/eval_stats.py`
+- Visual evaluation: `python Evaluation/eval_visual.py`
+- Video recording: `python Evaluation/eval_video.py`
 
-### Evaluation
-```bash
-python eval_stats.py
-```
-
-### Visualization
-- `eval_visual.py` for live plots
-- `eval_video.py` for MP4 recordings
+Evaluation outputs JSON files for each stage.
 
 ---
 
 ## 7. Repository Structure
 
-```text
-.
+```
+safe-marl-cooperative-navigation/
 ├── ATT_modules.py
 ├── SAC_ATT.py
 ├── env_coop.py
@@ -247,12 +304,11 @@ python eval_stats.py
 ├── respawnGoal.py
 ├── utilis.py
 ├── main.py
+├── Models/
 ├── Evaluation/
 │   ├── eval_stats.py
 │   ├── eval_visual.py
 │   ├── stage*_paper_eval.json
-├── Models/
-│   └── 5000 episodes/
 └── README.md
 ```
 
@@ -261,17 +317,12 @@ python eval_stats.py
 ## 8. Dependencies
 
 - Python 3.10+
-- numpy
-- torch
-- matplotlib
-- tensorboard
-- (Optional) acados, casadi
+- numpy, torch, matplotlib, tensorboard
+- Optional: acados + casadi (exact MPC)
 
 ---
 
 ## 9. Citation
-
-If you use this work, cite the original paper:
 
 ```bibtex
 @misc{dawood2025safemultiagentreinforcementlearning,
