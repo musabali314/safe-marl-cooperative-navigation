@@ -6,27 +6,19 @@
 <p align="center">
 
 Stage 1:
-
 https://github.com/user-attachments/assets/0f0d17f4-e8bd-4760-8f1e-0eae3a4420d5
 
 Stage 2:
-
 https://github.com/user-attachments/assets/c12dc15e-f163-4d96-bc1d-74c813279bf4
 
 Stage 3:
-
 https://github.com/user-attachments/assets/7efa9062-9660-4ddd-9822-1347de5f18e5
 
--->
+</p>
 
 ▶️ **Stage 1 — Goal Reaching**
 ▶️ **Stage 2 — Formation-Keeping Cooperation**
 ▶️ **Stage 3 — MPC-Safe Obstacle-Aware Navigation**
-
-</p>
-
----
-
 
 ---
 
@@ -43,34 +35,28 @@ All simulation logic is implemented from scratch inside the `EnvCoop` class.
 ### 2.1 Workspace and Robot Model
 
 **Workspace**
-
-```math
-Ω = [-3, 3] × [-3, 3] ⊂ ℝ²
+```
+Omega = [-3, 3] x [-3, 3] subset R^2
 ```
 
 **Robot State (unicycle model)**
-
-```math
-x_i = (x_i, y_i, θ_i)
+```
+x_i = (x_i, y_i, theta_i)
 ```
 
 **Control Input**
-
-```math
-a_i = (v_i, ω_i)
+```
+a_i = (v_i, omega_i)
 ```
 
 **Discrete-Time Dynamics**
-
-```math
-x_i(t+1) = x_i(t) + v_i(t) cos(θ_i(t)) Δt
-y_i(t+1) = y_i(t) + v_i(t) sin(θ_i(t)) Δt
-θ_i(t+1) = θ_i(t) + ω_i(t) Δt
+```
+x_i(t+1) = x_i(t) + v_i(t) * cos(theta_i(t)) * Delta t
+y_i(t+1) = y_i(t) + v_i(t) * sin(theta_i(t)) * Delta t
+theta_i(t+1) = theta_i(t) + omega_i(t) * Delta t
 ```
 
-Actions are bounded and consistent with the actor network.
-
-Episodes terminate upon collision, prolonged stagnation, or reaching the step horizon.
+Actions are bounded and consistent with the actor network. Episodes terminate upon collision, prolonged stagnation, or reaching the step horizon.
 
 ---
 
@@ -86,11 +72,11 @@ Episodes terminate upon collision, prolonged stagnation, or reaching the step ho
 
 Each robot is equipped with a simulated planar LiDAR.
 
-```math
-scan_i = [r_1, r_2, …, r_K],   r_k ∈ [0, r_max]
+```
+scan_i = [r_1, r_2, ..., r_K],   r_k in [0, r_max]
 ```
 
-Rays are cast in the robot frame over `[-π, π]`. The minimum distance ray and its bearing are explicitly encoded in the observation.
+Rays are cast in the robot frame over [-pi, pi]. The minimum-distance ray and its bearing are explicitly encoded in the observation.
 
 ---
 
@@ -98,27 +84,18 @@ Rays are cast in the robot frame over `[-π, π]`. The minimum distance ray and 
 
 Each agent receives a **12-dimensional local observation**:
 
-```math
-o_i =
-[
-d_min,
-α_obs,
-d_{i1}, α_{i1},
-d_{i2}, α_{i2},
-d_i^goal, α_i^goal,
-v_i(t-1), ω_i(t-1),
-d_centroid^goal,
-d_form
+```
+o_i = [
+  d_min,
+  alpha_obs,
+  d_i1, alpha_i1,
+  d_i2, alpha_i2,
+  d_i_goal, alpha_i_goal,
+  v_i(t-1), omega_i(t-1),
+  d_centroid_goal,
+  d_form_ref
 ]
 ```
-
-Where:
-- `d_min, α_obs` encode the closest LiDAR hit,
-- `(d_{i1}, α_{i1}), (d_{i2}, α_{i2})` are distances/bearings to neighbors,
-- `(d_i^goal, α_i^goal)` encode goal geometry,
-- `(v_i(t-1), ω_i(t-1))` are previous actions,
-- `d_centroid^goal` is team-level progress,
-- `d_form` is the desired formation spacing.
 
 All quantities are normalized.
 
@@ -128,42 +105,30 @@ All quantities are normalized.
 
 The per-agent reward is composed as:
 
-```math
+```
 r_i =
-r_alive +
-r_prog +
-r_goal +
-r_form +
-r_rr +
-r_obs +
-r_mpc
+  r_alive +
+  r_prog +
+  r_goal +
+  r_form +
+  r_rr +
+  r_obs +
+  r_mpc
 ```
 
-**Components**
+Key terms:
 
-```math
-r_prog ∝ d_goal(t−1) − d_goal(t)
 ```
-
-```math
-r_form ∝ −|d_ij − d_form|
-```
-
-```math
-r_rr < 0  if  d_ij < d_safe
-```
-
-```math
-r_obs < 0  if  min(scan_i) < d_safe_obs
-```
-
-```math
-r_mpc ∝ −||a_RL − a_safe||
+r_prog  ~  d_goal(t-1) - d_goal(t)
+r_form  ~ -|d_ij - d_form_ref|
+r_rr    < 0   if d_ij < d_safe
+r_obs   < 0   if min(scan_i) < d_safe_obs
+r_mpc   ~ -||a_RL - a_safe||
 ```
 
 Terminal rewards override shaping:
-- Success yields a large positive reward.
-- Collisions yield a large negative reward.
+- Goal reached → large positive reward
+- Collision or stagnation → large negative reward
 
 ---
 
@@ -171,15 +136,15 @@ Terminal rewards override shaping:
 
 A supervisory safety layer computes:
 
-```math
-a_safe = π_safe(a_RL, x)
+```
+a_safe = pi_safe(a_RL, x)
 ```
 
-Subject to:
+Subject to distance constraints:
 
-```math
-d_obs(x) ≥ d_safe_obs
-d_nei(x) ≥ d_safe_nei
+```
+d_obs(x) >= d_safe_obs
+d_nei(x) >= d_safe_nei
 ```
 
 Two backends are supported:
@@ -190,13 +155,12 @@ Solves a constrained nonlinear optimal control problem minimizing deviation from
 
 ### 3.2 Sampling-Based MPC (Fallback)
 
-Approximates MPC by:
-- Sampling candidate actions near `a_RL`,
-- Forward simulating trajectories,
-- Penalizing unsafe predictions,
-- Selecting the lowest-cost action.
+- Samples candidate actions near `a_RL`
+- Forward-simulates trajectories
+- Penalizes unsafe predictions
+- Selects the lowest-cost action
 
-This backend is used automatically if ACADOS is unavailable.
+Used automatically if ACADOS is unavailable.
 
 ---
 
@@ -206,14 +170,14 @@ This backend is used automatically if ACADOS is unavailable.
 
 Each agent follows a Gaussian policy:
 
-```math
-π_θ(a_i | o_i) = 𝒩(μ_θ(o_i), σ_θ(o_i))
+```
+pi_theta(a_i | o_i) = Normal(mu_theta(o_i), sigma_theta(o_i))
 ```
 
 Sampling uses reparameterization:
 
-```math
-a = tanh(μ + σ ⊙ ε)
+```
+a = tanh(mu + sigma * epsilon)
 ```
 
 The same actor network is shared across agents.
@@ -222,32 +186,32 @@ The same actor network is shared across agents.
 
 ### 4.2 Centralized Attention Critic
 
-The critic encodes each agent into an embedding `h_i` and applies multi-head self-attention:
+Attention mechanism:
 
-```math
-q_i = W_Q h_i
-k_i = W_K h_i
-v_i = W_V h_i
+```
+q_i = W_Q * h_i
+k_i = W_K * h_i
+v_i = W_V * h_i
 ```
 
-```math
-α_ij = softmax( (q_i · k_j) / √d )
+```
+alpha_ij = softmax( (q_i dot k_j) / sqrt(d) )
 ```
 
-```math
-c_i = Σ_j α_ij v_j
+```
+c_i = sum_j alpha_ij * v_j
 ```
 
-Final critic input:
+Final critic embedding:
 
-```math
+```
 z_i = [h_i , c_i]
 ```
 
 Twin Q-networks compute:
 
-```math
-Q_1(z), Q_2(z)
+```
+Q1(z), Q2(z)
 ```
 
 ---
@@ -255,24 +219,20 @@ Q_1(z), Q_2(z)
 ### 4.3 SAC Updates
 
 Actor objective:
-
-```math
-J_π = E[ α log π(a|o) − Q(o,a) ]
+```
+J_pi = E[ alpha * log pi(a|o) - Q(o,a) ]
 ```
 
 Critic target:
-
-```math
-y = r + γ ( min(Q′) − α log π )
+```
+y = r + gamma * (min(Q_target) - alpha * log pi)
 ```
 
-Temperature is learned automatically.
+Entropy temperature is learned automatically.
 
 ---
 
 ## 5. Curriculum Learning
-
-Training proceeds in three stages:
 
 1. **Stage 1**: Goal reaching (no formation, no obstacles, no safety filter)
 2. **Stage 2**: Formation keeping (formation enabled, no obstacles)
@@ -288,8 +248,6 @@ Each stage builds on the previous one.
 - Quantitative evaluation: `python Evaluation/eval_stats.py`
 - Visual evaluation: `python Evaluation/eval_visual.py`
 - Video recording: `python Evaluation/eval_video.py`
-
-Evaluation outputs JSON files for each stage.
 
 ---
 
@@ -335,7 +293,5 @@ safe-marl-cooperative-navigation/
   url={https://arxiv.org/abs/2312.12861},
 }
 ```
-
----
 
 **Research / educational use only.**
