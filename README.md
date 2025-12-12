@@ -5,15 +5,7 @@
 
 <p align="center">
 
-<!--
-Stage 1:
-Stage 2:
-Stage 3:
--->
-
-▶️ **Stage 1 — Goal Reaching**
-▶️ **Stage 2 — Formation-Keeping Cooperation**
-▶️ **Stage 3 — MPC-Safe Obstacle-Aware Navigation**
+https://github.com/user-attachments/assets/9c045033-910d-43ab-980e-b66de0443b32
 
 </p>
 
