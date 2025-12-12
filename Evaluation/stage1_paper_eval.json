@@ -1,0 +1,9 @@
+{
+    "stage": 1,
+    "episodes": 50,
+    "success_rate": 0.8,
+    "collision_rate": 0.2,
+    "timeout_rate": 0.0,
+    "avg_steps_to_goal": 85.9,
+    "avg_return": 26.07732621078045
+}
