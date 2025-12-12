@@ -1,6 +1,6 @@
 {
     "stage": 2,
-    "episodes": 50,
+    "episodes": 200,
     "success_rate": 0.78,
     "collision_rate": 0.18,
     "timeout_rate": 0.04,
